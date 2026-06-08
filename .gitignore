@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Uploads
+uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# Data files
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db
