@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Recorrido de Vehículo</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background: #f8f9fa;
+        }
+
+        #map {
+            height: calc(100vh - 32px);
+            border-radius: 12px;
+            min-height: 400px;
+        }
+
+        .panel {
+            height: calc(100vh - 32px);
+            overflow-y: auto;
+        }
+
+        .stop-list {
+            max-height: 360px;
+            overflow-y: auto;
+        }
+
+        .stop-item {
+            border-bottom: 1px solid #e5e5e5;
+            padding: 10px 0;
+        }
+
+        .small-muted {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .card {
+            border-radius: 14px;
+        }
+
+        .legend-badge {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.85rem;
+            margin-right: 6px;
+            margin-bottom: 6px;
+        }
+
+        .legend-start { background: #198754; }
+        .legend-end { background: #dc3545; }
+        .legend-stop { background: #fd7e14; }
+        .legend-long-stop { background: #e53e3e; }
+        .legend-route { background: #0d6efd; }
+        .legend-point { background: #6c757d; }
+
+        pre {
+            font-size: 0.85rem;
+        }
+
+        .day-nav {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(255,255,255,0.95);
+            border-radius: 12px;
+            padding: 8px 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.22);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            user-select: none;
+        }
+
+        .day-nav button {
+            border: none;
+            background: #0d6efd;
+            color: white;
+            border-radius: 8px;
+            width: 34px;
+            height: 34px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+
+        .day-nav button:hover { background: #0b5ed7; }
+        .day-nav button:disabled { background: #adb5bd; cursor: default; }
+
+        .day-nav .day-label {
+            font-weight: 600;
+            font-size: 0.95rem;
+            min-width: 130px;
+            text-align: center;
+        }
+
+        .day-nav .day-counter {
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .day-nav .btn-all {
+            background: #6c757d;
+            font-size: 0.78rem;
+            width: auto;
+            padding: 0 10px;
+        }
+
+        .day-nav .btn-all:hover { background: #5a6268; }
+        .day-nav .btn-all.active { background: #0d6efd; }
+
+        /* ---- Mobile responsive ---- */
+        @media (max-width: 991.98px) {
+            .panel {
+                height: auto;
+                overflow-y: visible;
+            }
+
+            #map {
+                height: 55vh;
+                min-height: 300px;
+                border-radius: 8px;
+            }
+
+            .stop-list {
+                max-height: 250px;
+            }
+
+            .day-nav {
+                bottom: 12px;
+                padding: 6px 10px;
+                gap: 6px;
+                font-size: 0.85rem;
+            }
+
+            .day-nav button {
+                width: 30px;
+                height: 30px;
+                font-size: 0.95rem;
+            }
+
+            .day-nav .day-label {
+                font-size: 0.85rem;
+                min-width: 100px;
+            }
+
+            .legend-badge {
+                font-size: 0.75rem;
+                padding: 4px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container-fluid py-3">
+    <div class="row g-3">
+        <div class="col-lg-4 order-2 order-lg-1">
+            <div class="card shadow-sm panel">
+                <div class="card-body">
+                    <h3 class="mb-3">Recorrido de Vehículo</h3>
+
+                    <form method="post" enctype="multipart/form-data" class="mb-4">
+                        <div class="mb-3">
+                            <label for="file" class="form-label">Subir archivo Excel, PDF o CSV</label>
+                            <input class="form-control" type="file" id="file" name="file" accept=".xlsx,.xls,.pdf,.csv" required>
+                        </div>
+                        <button class="btn btn-primary w-100" type="submit">Procesar archivo</button>
+                    </form>
+
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }} py-2">{{ message }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+
+                    {% if error_detail %}
+                        <div class="alert alert-warning">
+                            <strong>Detalle del error:</strong><br>
+                            <pre class="mb-0" style="white-space: pre-wrap;">{{ error_detail }}</pre>
+                        </div>
+                    {% endif %}
+
+                    {% if summary %}
+                        <div class="card mb-3 border-0 bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title mb-3">Resumen</h5>
+
+                                <p class="mb-1"><strong>Archivo:</strong> {{ summary.filename }}</p>
+                                <p class="mb-1"><strong>Total de puntos:</strong> {{ summary.total_points }}</p>
+                                <p class="mb-1"><strong>Inicio:</strong> {{ summary.start_time }}</p>
+                                <p class="mb-1"><strong>Fin:</strong> {{ summary.end_time }}</p>
+                                <p class="mb-1"><strong>Distancia aproximada:</strong> {{ summary.total_distance_km }} km</p>
+                                <p class="mb-1"><strong>Paradas detectadas:</strong> {{ summary.total_stops }}</p>
+                                <p class="mb-0">
+                                    <strong>Regla de parada:</strong>
+                                    {{ summary.stop_radius_meters }} m durante {{ summary.stop_min_minutes }} min
+                                </p>
+
+                                {% if export_id %}
+                                    <button class="btn btn-outline-success w-100 mt-3" type="button" id="exportResultBtn"
+                                            data-export-url="{{ url_for('export_result', export_id=export_id, _external=True) }}"
+                                            data-suggested-name="resultado_{{ summary.filename }}.html">
+                                        Descargar resultado (HTML)
+                                    </button>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <span class="legend-badge legend-start">Inicio</span>
+                            <span class="legend-badge legend-end">Fin</span>
+                            <span class="legend-badge legend-stop">Paradas</span>
+                            <span class="legend-badge legend-long-stop">Parada larga duración</span>
+                            <span class="legend-badge legend-route">Recorrido</span>
+                            <span class="legend-badge legend-point">Puntos</span>
+                        </div>
+
+                        <h5>Paradas detectadas</h5>
+
+                        {% if stops %}
+                            <div class="stop-list">
+                                {% for stop in stops %}
+                                    <div class="stop-item">
+                                        <div><strong>{% if stop.type == 'long' %}&#9650; Parada larga duración {{ loop.index }}{% else %}Parada {{ loop.index }}{% endif %}</strong></div>
+                                        <div class="small-muted">{{ stop.start }} → {{ stop.end }}</div>
+                                        <div>Duración: <strong>{{ stop.duration_min }} min</strong></div>
+                                        <div>Puntos agrupados: {{ stop.points }}</div>
+                                        <div>Coord: {{ stop.lat }}, {{ stop.lon }}</div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="alert alert-secondary">
+                                No se detectaron paradas con la regla actual.
+                            </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="alert alert-info mb-0">
+                            Sube un archivo Excel, PDF o CSV con el formato de exportación GPS que has pasado.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8 order-1 order-lg-2" style="position:relative;">
+            <div id="map" class="shadow-sm"></div>
+            <div id="dayNav" class="day-nav" style="display:none;">
+                <button id="btnAllDays" class="btn-all active" title="Todos los dias">Todo</button>
+                <button id="btnPrevDay" title="Dia anterior">&#9664;</button>
+                <div>
+                    <div class="day-label" id="dayLabel">--</div>
+                    <div class="day-counter" id="dayCounter"></div>
+                </div>
+                <button id="btnNextDay" title="Dia siguiente">&#9654;</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const routePoints = {{ route_points|tojson }};
+    const stopItems = {{ stops|tojson }};
+
+    /* ---- Export button ---- */
+    const exportBtn = document.getElementById("exportResultBtn");
+    if (exportBtn) {
+        exportBtn.addEventListener("click", async () => {
+            const exportUrl = exportBtn.getAttribute("data-export-url");
+            const suggestedName = exportBtn.getAttribute("data-suggested-name") || "resultado.html";
+            try {
+                if (window.pywebview && window.pywebview.api && window.pywebview.api.save_export_html) {
+                    const res = await window.pywebview.api.save_export_html(exportUrl, suggestedName);
+                    if (res && res.ok) return;
+                    if (res && res.canceled) return;
+                    console.error("Export error", res);
+                    alert((res && res.error) ? res.error : "No se pudo exportar el resultado.");
+                    return;
+                }
+            } catch (e) {
+                console.error("Export exception", e);
+                alert("Error al exportar el resultado: " + (e && e.message ? e.message : e));
+                return;
+            }
+            window.location.href = exportUrl;
+        });
+    }
+
+    /* ---- Map setup ---- */
+    const map = L.map("map").setView([40.4168, -3.7038], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors",
+        maxZoom: 19
+    }).addTo(map);
+
+    /* ---- Icon factories ---- */
+    function makeIcon(color) {
+        return L.divIcon({
+            className: "",
+            html: `<div style="background:${color};width:18px;height:18px;border-radius:50%;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9]
+        });
+    }
+    const startIcon = makeIcon("#198754");
+    const endIcon   = makeIcon("#dc3545");
+
+    /* ---- Group data by date ---- */
+    function uniqueDates(points) {
+        const seen = new Set();
+        const dates = [];
+        points.forEach(p => {
+            if (p.date && !seen.has(p.date)) { seen.add(p.date); dates.push(p.date); }
+        });
+        return dates;
+    }
+
+    const allDates = uniqueDates(routePoints);
+    const multiDay = allDates.length > 1;
+
+    function buildDayLayer(pts, stps) {
+        const group = L.layerGroup();
+        if (pts.length === 0) return { group, bounds: [] };
+
+        const latlngs = pts.map(p => [p.lat, p.lon]);
+        L.polyline(latlngs, { color: "#0d6efd", weight: 4, opacity: 0.85 }).addTo(group);
+
+        const first = pts[0];
+        const last  = pts[pts.length - 1];
+
+        L.marker([first.lat, first.lon], { icon: startIcon }).addTo(group)
+            .bindPopup(`<strong>Inicio</strong><br>${first.fecha_hora}<br>${first.lat}, ${first.lon}`);
+        L.marker([last.lat, last.lon], { icon: endIcon }).addTo(group)
+            .bindPopup(`<strong>Fin</strong><br>${last.fecha_hora}<br>${last.lat}, ${last.lon}`);
+
+        pts.forEach((p, i) => {
+            if (i !== 0 && i !== pts.length - 1) {
+                L.circleMarker([p.lat, p.lon], {
+                    radius: 3, color: "#6c757d", fillColor: "#6c757d", fillOpacity: 0.7, weight: 0
+                }).addTo(group).bindPopup(`<strong>Punto</strong><br>${p.fecha_hora}<br>${p.lat}, ${p.lon}`);
+            }
+        });
+
+        stps.forEach((s, idx) => {
+            const isLong = s.type === "long";
+            const color  = isLong ? "#e53e3e" : "#fd7e14";
+            const label  = isLong ? "Parada larga duraci\u00f3n" : "Parada";
+            if (isLong) {
+                const triIcon = L.divIcon({
+                    className: "",
+                    html: `<svg width="22" height="22" viewBox="0 0 22 22"><polygon points="11,2 2,20 20,20" fill="${color}" stroke="white" stroke-width="2"/></svg>`,
+                    iconSize: [22, 22],
+                    iconAnchor: [11, 18]
+                });
+                L.marker([s.lat, s.lon], { icon: triIcon }).addTo(group).bindPopup(
+                    `<strong>${label}</strong><br>Inicio: ${s.start}<br>Fin: ${s.end}<br>` +
+                    `Duraci\u00f3n: ${s.duration_min} min<br>Puntos: ${s.points}<br>Coord: ${s.lat}, ${s.lon}`
+                );
+            } else {
+                L.circleMarker([s.lat, s.lon], {
+                    radius: 8, color: color, fillColor: color, fillOpacity: 0.95, weight: 1
+                }).addTo(group).bindPopup(
+                    `<strong>${label}</strong><br>Inicio: ${s.start}<br>Fin: ${s.end}<br>` +
+                    `Duraci\u00f3n: ${s.duration_min} min<br>Puntos: ${s.points}<br>Coord: ${s.lat}, ${s.lon}`
+                );
+            }
+        });
+
+        const allBounds = latlngs.concat(stps.map(s => [s.lat, s.lon]));
+        return { group, bounds: allBounds };
+    }
+
+    /* ---- Build "all" layer ---- */
+    const allLayer = buildDayLayer(routePoints, stopItems);
+    allLayer.group.addTo(map);
+    if (allLayer.bounds.length > 0) map.fitBounds(allLayer.bounds, { padding: [30, 30] });
+
+    /* ---- Build per-day layers ---- */
+    const dayLayers = {};
+    allDates.forEach(date => {
+        const pts  = routePoints.filter(p => p.date === date);
+        const stps = stopItems.filter(s => s.date === date);
+        dayLayers[date] = buildDayLayer(pts, stps);
+    });
+
+    /* ---- Day navigator ---- */
+    let currentDayIndex = -1; // -1 = all days
+
+    const dayNav     = document.getElementById("dayNav");
+    const dayLabel   = document.getElementById("dayLabel");
+    const dayCounter = document.getElementById("dayCounter");
+    const btnPrev    = document.getElementById("btnPrevDay");
+    const btnNext    = document.getElementById("btnNextDay");
+    const btnAll     = document.getElementById("btnAllDays");
+
+    function showDay(index) {
+        // Remove all day layers and the "all" layer
+        map.eachLayer(layer => {
+            if (layer instanceof L.TileLayer) return;
+            map.removeLayer(layer);
+        });
+
+        currentDayIndex = index;
+
+        if (index === -1) {
+            allLayer.group.addTo(map);
+            if (allLayer.bounds.length > 0) map.fitBounds(allLayer.bounds, { padding: [30, 30] });
+            dayLabel.textContent = "Todos los dias";
+            dayCounter.textContent = `${allDates.length} dias`;
+            btnAll.classList.add("active");
+            btnPrev.disabled = false;
+            btnNext.disabled = false;
+        } else {
+            const date = allDates[index];
+            const dl = dayLayers[date];
+            dl.group.addTo(map);
+            if (dl.bounds.length > 0) map.fitBounds(dl.bounds, { padding: [30, 30] });
+            dayLabel.textContent = date;
+            dayCounter.textContent = `Dia ${index + 1} de ${allDates.length}`;
+            btnAll.classList.remove("active");
+            btnPrev.disabled = (index === 0);
+            btnNext.disabled = (index === allDates.length - 1);
+        }
+    }
+
+    if (multiDay && dayNav) {
+        dayNav.style.display = "flex";
+        btnPrev.addEventListener("click", () => {
+            if (currentDayIndex === -1) showDay(allDates.length - 1);
+            else if (currentDayIndex > 0) showDay(currentDayIndex - 1);
+        });
+        btnNext.addEventListener("click", () => {
+            if (currentDayIndex === -1) showDay(0);
+            else if (currentDayIndex < allDates.length - 1) showDay(currentDayIndex + 1);
+        });
+        btnAll.addEventListener("click", () => showDay(-1));
+        showDay(-1);
+    }
+</script>
+</body>
+</html>
